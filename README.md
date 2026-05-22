@@ -25,7 +25,7 @@
 
 
 ```
-csa-llm/
+llm-csa/
 ├── src/                         # All Python source (invoked as `python -m src.<pkg>.<mod>`)
 │   ├── data/                    # Dataset construction, answer generation, grading,
 │   │                            # analysis generation, SFT data assembly
@@ -58,8 +58,8 @@ csa-llm/
 ## 🛠️ Setup
 
 ```bash
-git clone https://github.com/Joyyang158/csa-llm.git
-cd csa-llm
+git clone https://github.com/Joyyang158/llm-csa.git
+cd llm-csa
 pip install -r requirements.txt
 ```
 
@@ -67,7 +67,7 @@ Environment variables (only set the ones you need):
 
 | Variable | Used by |
 | --- | --- |
-| `HF_TOKEN` | `scripts/hub/upload_*.sh` |
+| `HF_TOKEN` | `scripts/hub/upload_*.sh`, gated HF model downloads |
 | `TOGETHER_API_KEY` | `scripts/data/generate_answers_api.sh`, `scripts/data/generate_analysis_teacher.sh` |
 | `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` | `scripts/inference/inference_api.sh` |
 | `WANDB_API_KEY` | training |
@@ -104,6 +104,8 @@ The four training strategies in Stage ②. The table below shows the **output fo
 
 All local inference paths go through `vllm.LLM`. Both SFT and GRPO use full-parameter fine-tuning with DeepSpeed ZeRO-3, and the accelerate configs live in `scripts/training/`. The sections below follow the three stages above.
 
+Most launchers are driven by **environment variables** (override the defaults shown in each script header), and a few take a YAML config as a **positional argument**. Each command below highlights the key knobs; less common settings (sampling temperatures, max-token caps, paths, etc.) are documented at the top of every script.
+
 ### ① CSA Label Construction
 
 We evaluate on two domains:
@@ -111,24 +113,22 @@ We evaluate on two domains:
 * **math**: GSM8K, MATH-500, AIME. Open-ended; final answers in `\boxed{...}`.
 * **science**: MMLU-Pro restricted to biology / chemistry / health / physics. Multiple-choice; each test query is sampled with multiple option-shuffles and aggregated by majority vote.
 
-Pre-built benchmarks for both domains are provided under [`dataset/`](dataset/). Both `dataset/math/` and `dataset/science/` already contain queries, gold answers, 5-sample rollouts from the target model, and the derived per-row `SELF_SOLVE` / `DELEGATE` label (`is_correct` column). For math we use the any-correct rule; for science we use the majority-correct rule with per-sample option shuffling. Both rules live in `src/utils/grading.py`, so the same logic is reused at evaluation time.
+We provide pre-built benchmarks for both domains under [`dataset/`](dataset/), and we also provide the code to build them under [`scripts/data/`](scripts/data/) and [`src/data/`](src/data/) in case you want to change the dataset composition (for example, adjust the per-source ratio).
 
-If instead you want to **change the dataset composition** (for example, adjust the per-source ratio, swap in a different base model to probe, or add a new benchmark), the three steps below let you rebuild the data from scratch.
-
-**Step 1: Build raw benchmark splits from upstream sources.**
 
 ```bash
 bash scripts/data/build_dataset_math.sh
 bash scripts/data/build_dataset_science.sh
 ```
 
-**Step 2: Collect 5 samples per query from the target model** (vLLM-backed; use `generate_answers_api.sh` for hosted models).
+**Step 1: Collect 5 samples per query from the target model** (vLLM-backed; use `generate_answers_api.sh` for hosted models).
 
 ```bash
-bash scripts/data/generate_answers.sh
+DOMAIN=math|science SPLIT=train bash scripts/data/generate_answers.sh
+DOMAIN=math|science SPLIT=test  bash scripts/data/generate_answers.sh
 ```
 
-**Step 3: Grade the samples to derive the per-row `is_correct` label.**
+**Step 2: Grade the samples to derive the per-row `is_correct` label.**
 
 ```bash
 bash scripts/evaluation/grade_math.sh
@@ -137,67 +137,88 @@ bash scripts/evaluation/grade_science.sh
 
 ### ② CSA Training Strategies
 
-#### (a) SFT_label: bare label, no rationale
-
-Set `sft_mode: label` in `scripts/training/sft.yaml`, then:
+All training launchers load their dataset from the HuggingFace Hub via the `dataset_name` field in the YAML config (`sft.yaml` / `grpo.yaml`), so the CSVs you built in Stage ① need to be pushed to the Hub first. We provide [`scripts/hub/upload_dataset.sh`](scripts/hub/upload_dataset.sh) for this; it requires `HF_TOKEN`:
 
 ```bash
-bash scripts/training/run_sft.sh
+CSV_PATH=path/to/data.csv  REPO_ID=your-username/csa-sft-dataset \
+    bash scripts/hub/upload_dataset.sh
+```
+
+In addition, you can optionally use [`scripts/hub/upload_model.sh`](scripts/hub/upload_model.sh) to push a trained checkpoint folder to the Hub. This is not required by the training pipeline itself.
+
+```bash
+LOCAL_DIR=path/to/checkpoint  REPO_ID=your-username/csa-model \
+    bash scripts/hub/upload_model.sh
+```
+
+#### (a) SFT_label: bare label, no rationale
+
+Set `sft_mode: label` in `scripts/training/sft.yaml`, then pass the YAML config to the launcher:
+
+```bash
+bash scripts/training/run_sft.sh scripts/training/sft.yaml
 ```
 
 #### (b) SFT_self: self-generated rationale + label
 
-First have the training model generate rationales for itself (conditioned on the ground-truth label), then assemble the SFT CSV:
+First have the training model generate rationales for itself (conditioned on the ground-truth label), then assemble the SFT CSV.
 
 ```bash
-bash scripts/data/generate_analysis_self.sh
-bash scripts/data/build_sft_dataset.sh
+DOMAIN=math|science SPLIT=train bash scripts/data/generate_analysis_self.sh
+DOMAIN=math|science bash scripts/data/build_sft_dataset.sh
 ```
 
-Set `sft_mode: self` in the SFT config and run:
+Set `sft_mode: self` in `scripts/training/sft.yaml` and run:
 
 ```bash
-bash scripts/training/run_sft.sh
+bash scripts/training/run_sft.sh scripts/training/sft.yaml
 ```
 
 #### (c) SFT_teacher: teacher-distilled rationale + label
 
-Same as (b), but rationales come from a stronger teacher model (requires `TOGETHER_API_KEY`):
+Same as (b), but rationales come from a stronger teacher model (requires `TOGETHER_API_KEY`; defaults to `Qwen/Qwen3-235B-A22B-Instruct-2507-tput`, override via `TEACHER_MODEL`):
 
 ```bash
-bash scripts/data/generate_analysis_teacher.sh
-bash scripts/data/build_sft_dataset.sh
+DOMAIN=math|science SPLIT=train bash scripts/data/generate_analysis_teacher.sh
+DOMAIN=math|science bash scripts/data/build_sft_dataset.sh
 ```
 
-Set `sft_mode: teacher` and run:
+Set `sft_mode: teacher` in `scripts/training/sft.yaml` and run:
 
 ```bash
-bash scripts/training/run_sft.sh
+bash scripts/training/run_sft.sh scripts/training/sft.yaml
 ```
 
 #### (d) RLVR: two-stage GRPO with Diversity-Filtered Warm-up
 
-**Phase 1: DFW (Diversity-Filtered Warm-up).** `run_dfw.sh` first retains only queries whose K=16 rollouts contain *both* `SELF_SOLVE` and `DELEGATE` to construct a diversified subset *D*<sub>div</sub>, then runs GRPO on it.
+**Phase 1: DFW (Diversity-Filtered Warm-up).** `run_dfw.sh` first retains only queries whose K=16 rollouts contain *both* `SELF_SOLVE` and `DELEGATE` to construct a diversified subset *D*<sub>div</sub>. `MODEL_NAME` (the initial policy to roll out from) is required.
 
 ```bash
-bash scripts/training/run_dfw.sh
-bash scripts/training/run_grpo.sh
+DOMAIN=math|science MODEL_NAME=path/to/initial-policy \
+    bash scripts/training/run_dfw.sh
 ```
 
-**Phase 2: Full GRPO.** Continue GRPO training on the full dataset, starting from the warm-up checkpoint:
+Then run a round of GRPO on this diversified subset to produce the warm-up checkpoint. Point `grpo.yaml` at *D*<sub>div</sub> as the training data, then:
 
 ```bash
-bash scripts/training/run_grpo.sh
+bash scripts/training/run_grpo.sh scripts/training/grpo.yaml
+```
+
+**Phase 2: Full GRPO.** Continue GRPO training on the full dataset, starting from the warm-up checkpoint. Update model / dataset paths in `grpo.yaml` to point at the Phase 1 checkpoint and the full dataset, then:
+
+```bash
+bash scripts/training/run_grpo.sh scripts/training/grpo.yaml
 ```
 
 Note: For OLMo-2 models, skip Phase 1. Their rollouts are already diverse enough that DFW is unnecessary, so run only Phase 2 on the full dataset.
 
 ### ③ CSA Inference & Evaluation
 
-**Inference.** Run the trained model on the held-out test split:
+**Inference.** Run the trained model on the held-out test split. `MODEL_NAME` points at the trained CSA checkpoint.
 
 ```bash
-bash scripts/inference/inference_local.sh
+DOMAIN=math|science SPLIT=test MODEL_NAME=path/to/csa-checkpoint \
+    bash scripts/inference/inference_local.sh
 ```
 
 The model emits an `<analysis>` block followed by a `<decision>` (`SELF_SOLVE` or `DELEGATE`). Parsing is in `src/utils/parsing.py:parse_decision`.
@@ -205,29 +226,37 @@ The model emits an `<analysis>` block followed by a `<decision>` (`SELF_SOLVE` o
 **Evaluation.** After training, the model's underlying problem-solving ability may have shifted, so the original `is_correct` labels (probed from the model *before* training) no longer reflect what the model can actually solve *after* training. Both evaluations below therefore start from the same prerequisite: re-generating answers with the trained model on the test split.
 
 ```bash
-# Re-generate 5 samples per test query using the model after training
-bash scripts/data/generate_answers.sh
+# Re-generate 5 samples per test query using the model after training.
+DOMAIN=math|science SPLIT=test bash scripts/data/generate_answers.sh
 ```
 
 **(a) CSA quality.** Does the model make the right `SELF_SOLVE` / `DELEGATE` decisions? `src/csa/evaluate.py` reports **CDS** (Capability Discrimination Score) and **M-F1** as the main metrics, with Accuracy and SSR also reported as references.
 
-The script supports two grading modes via a single `--grade_mode` switch. The two modes differ only in which `is_correct` labels they grade against:
+The script supports two grading modes via `GRADE_MODE`. The two modes differ only in which `is_correct` labels they grade against:
 
-* **`generations` (default, recommended).** Grades against the answers freshly re-generated above, so `is_correct` reflects the model's ability *after* training. This is what you want for honest evaluation, because CSA training may have shifted that ability.
-* **`column`.** Uses the `is_correct` column already in the predictions CSV, which reflects the model's ability *before* training. Provided as an option if you specifically want to compare against the original snapshot.
+* **`generations` (default, recommended).** Grades against the answers freshly re-generated above (`GT_CSV_PATH`), so `is_correct` reflects the model's ability *after* training. This is what you want for honest evaluation, because CSA training may have shifted that ability.
+* **`column`.** Uses the `is_correct` column already in `CSV_PATH`, which reflects the model's ability *before* training. Provided as an option if you specifically want to compare against the original snapshot.
 
 ```bash
 # Recommended: grade against the model's ability after training
-bash scripts/evaluation/evaluate_csa.sh   # GRADE_MODE=generations
+GRADE_MODE=generations DOMAIN=math|science \
+    CSV_PATH=path/to/csa-predictions.csv \
+    GT_CSV_PATH=path/to/regenerated-answers.csv \
+    bash scripts/evaluation/evaluate_csa.sh
 
 # Optional: grade against the original (before-training) labels
-bash scripts/evaluation/evaluate_csa.sh   # GRADE_MODE=column
+GRADE_MODE=column \
+    CSV_PATH=path/to/csa-predictions.csv \
+    bash scripts/evaluation/evaluate_csa.sh
 ```
 
-**(b) Capability Ratio (CR).** Does CSA training preserve the model's underlying problem-solving ability? CR is the ratio of solve accuracy *after* training to solve accuracy *before* training on the same evaluation set, computed from the re-generated answers above.
+**(b) Capability Ratio (CR).** Does CSA training preserve the model's underlying problem-solving ability? CR is the ratio of solve accuracy *after* training to solve accuracy *before* training on the same evaluation set. Pass the two generation CSVs (`PRE_CSV` and `POST_CSV`), produced by Step 2 of label construction and by the re-generation step above:
 
 ```bash
-bash scripts/evaluation/capability_ratio.sh
+DOMAIN=math|science \
+    PRE_CSV=path/to/before-training/test.csv \
+    POST_CSV=path/to/after-training/test.csv \
+    bash scripts/evaluation/capability_ratio.sh
 ```
 
 <!-- ---
