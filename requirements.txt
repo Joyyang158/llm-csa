@@ -1,0 +1,23 @@
+torch
+transformers
+vllm
+datasets
+huggingface_hub
+
+pandas
+numpy
+scikit-learn
+tqdm
+func_timeout
+PyYAML
+
+trl
+accelerate
+deepspeed
+wandb
+
+# API providers
+together
+openai
+google-genai
+anthropic

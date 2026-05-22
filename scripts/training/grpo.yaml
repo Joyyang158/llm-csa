@@ -1,0 +1,46 @@
+# GRPO for the CSA model. Full-parameter fine-tuning.
+
+# ---- Model & data ----
+model_name: path/to/checkpoint-or-hf-id
+model_type: qwen
+dataset_name: your-username/csa-grpo-dataset
+domain: math
+
+# ---- Output ----
+base_output_dir:  outputs/grpo/math/your-model-name
+
+# ---- GRPO-specific ----
+num_generations: 16
+max_prompt_length: 2048
+max_completion_length: 2048
+beta: 0.01
+use_vllm: true
+vllm_gpu_memory_utilization: 0.3
+debug_print_every: 10
+
+# ---- Sampling ----
+temperature: 1.0
+top_p: 1.0
+top_k: -1
+
+# ---- Optimisation ----
+per_device_train_batch_size: 16
+gradient_accumulation_steps: 1
+epochs: 1
+learning_rate: 1.0e-6
+optim: adamw_torch
+weight_decay: 0.01
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+seed: 3407
+
+# ---- Logging & checkpointing ----
+logging_steps: 1
+save_strategy: steps
+save_steps: 200
+save_total_limit: 5
+save_only_model: true
+
+# ---- W&B ----
+wandb_project: capability-self-assessment
+report_to: wandb
