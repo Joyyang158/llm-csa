@@ -232,7 +232,7 @@ bash scripts/evaluation/evaluate_csa.sh   # GRADE_MODE=column
 bash scripts/evaluation/capability_ratio.sh
 ```
 
----
+<!-- ---
 
 ## 📚 Citation
 
@@ -244,4 +244,4 @@ To be added on de-anonymisation.
   author  = {Anonymous},
   year    = {2026}
 }
-```
+``` -->
