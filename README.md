@@ -1,5 +1,4 @@
-<h1 align="center">Capability Self-Assessment</h1>
-<h3 align="center">Teaching LLMs to Know Their Limits</h3>
+<h1 align="center">Capability Self-Assessment: Teaching LLMs to Know Their Limits</h1>
 
 <p align="center">
   <a href="#"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
