@@ -1,9 +1,10 @@
-<h1 align="center">Capability Self-Assessment: Teaching LLMs to Know Their Limits</h1>
-
 <p align="center">
-  <a href="#"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
-  <a href="#"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-  <a href="#"><img alt="Python" src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white"></a>
+  <font size="6"><b>Capability Self-Assessment:<br>Teaching LLMs to Know Their Limits</b></font>
+</p>
+<p align="center">
+<a href="#"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
+<a href="#"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+<a href="#"><img alt="Python" src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white"></a>
 </p>
 
 <!-- =============================================================== -->
