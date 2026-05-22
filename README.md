@@ -1,5 +1,5 @@
 <p align="center">
-  <font size="6"><b>Capability Self-Assessment:<br>Teaching LLMs to Know Their Limits</b></font>
+  <font size="20"><b>Capability Self-Assessment:<br>Teaching LLMs to Know Their Limits</b></font>
 </p>
 <p align="center">
 <a href="#"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
