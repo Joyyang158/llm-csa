@@ -24,7 +24,7 @@
 ## 📁 Repository Structure
 
 
-```
+`````
 llm-csa/
 ├── src/                         # All Python source (invoked as `python -m src.<pkg>.<mod>`)
 │   ├── data/                    # Dataset construction, answer generation, grading,
@@ -51,17 +51,17 @@ llm-csa/
 │
 ├── requirements.txt
 └── README.md
-```
+`````
 
 ---
 
 ## 🛠️ Setup
 
-```bash
+`````bash
 git clone https://github.com/Joyyang158/llm-csa.git
 cd llm-csa
 pip install -r requirements.txt
-```
+`````
 
 Environment variables (only set the ones you need):
 
@@ -116,99 +116,99 @@ We evaluate on two domains:
 We provide pre-built benchmarks for both domains under [`dataset/`](dataset/), and we also provide the code to build them under [`scripts/data/`](scripts/data/) and [`src/data/`](src/data/) in case you want to change the dataset composition (for example, adjust the per-source ratio).
 
 
-```bash
+`````bash
 bash scripts/data/build_dataset_math.sh
 bash scripts/data/build_dataset_science.sh
-```
+`````
 
 **Step 1: Collect 5 samples per query from the target model** (vLLM-backed; use `generate_answers_api.sh` for hosted models).
 
-```bash
-DOMAIN=math|science SPLIT=train bash scripts/data/generate_answers.sh
-DOMAIN=math|science SPLIT=test  bash scripts/data/generate_answers.sh
-```
+`````bash
+DOMAIN=[math/science] SPLIT=train bash scripts/data/generate_answers.sh
+DOMAIN=[math/science] SPLIT=test  bash scripts/data/generate_answers.sh
+`````
 
 **Step 2: Grade the samples to derive the per-row `is_correct` label.**
 
-```bash
+`````bash
 bash scripts/evaluation/grade_math.sh
 bash scripts/evaluation/grade_science.sh
-```
+`````
 
 ### ② CSA Training Strategies
 
 All training launchers load their dataset from the HuggingFace Hub via the `dataset_name` field in the YAML config (`sft.yaml` / `grpo.yaml`), so the CSVs you built in Stage ① need to be pushed to the Hub first. We provide [`scripts/hub/upload_dataset.sh`](scripts/hub/upload_dataset.sh) for this; it requires `HF_TOKEN`:
 
-```bash
+`````bash
 CSV_PATH=path/to/data.csv  REPO_ID=your-username/csa-sft-dataset \
     bash scripts/hub/upload_dataset.sh
-```
+`````
 
 In addition, you can optionally use [`scripts/hub/upload_model.sh`](scripts/hub/upload_model.sh) to push a trained checkpoint folder to the Hub. This is not required by the training pipeline itself.
 
-```bash
+`````bash
 LOCAL_DIR=path/to/checkpoint  REPO_ID=your-username/csa-model \
     bash scripts/hub/upload_model.sh
-```
+`````
 
 #### (a) SFT_label: bare label, no rationale
 
 Set `sft_mode: label` in `scripts/training/sft.yaml`, then pass the YAML config to the launcher:
 
-```bash
+`````bash
 bash scripts/training/run_sft.sh scripts/training/sft.yaml
-```
+`````
 
 #### (b) SFT_self: self-generated rationale + label
 
 First have the training model generate rationales for itself (conditioned on the ground-truth label), then assemble the SFT CSV.
 
-```bash
-DOMAIN=math|science SPLIT=train bash scripts/data/generate_analysis_self.sh
-DOMAIN=math|science bash scripts/data/build_sft_dataset.sh
-```
+`````bash
+DOMAIN=[math/science] SPLIT=train bash scripts/data/generate_analysis_self.sh
+DOMAIN=[math/science] bash scripts/data/build_sft_dataset.sh
+`````
 
 Set `sft_mode: self` in `scripts/training/sft.yaml` and run:
 
-```bash
+`````bash
 bash scripts/training/run_sft.sh scripts/training/sft.yaml
-```
+`````
 
 #### (c) SFT_teacher: teacher-distilled rationale + label
 
 Same as (b), but rationales come from a stronger teacher model (requires `TOGETHER_API_KEY`; defaults to `Qwen/Qwen3-235B-A22B-Instruct-2507-tput`, override via `TEACHER_MODEL`):
 
-```bash
-DOMAIN=math|science SPLIT=train bash scripts/data/generate_analysis_teacher.sh
-DOMAIN=math|science bash scripts/data/build_sft_dataset.sh
-```
+`````bash
+DOMAIN=[math/science] SPLIT=train bash scripts/data/generate_analysis_teacher.sh
+DOMAIN=[math/science] bash scripts/data/build_sft_dataset.sh
+`````
 
 Set `sft_mode: teacher` in `scripts/training/sft.yaml` and run:
 
-```bash
+`````bash
 bash scripts/training/run_sft.sh scripts/training/sft.yaml
-```
+`````
 
 #### (d) RLVR: two-stage GRPO with Diversity-Filtered Warm-up
 
 **Phase 1: DFW (Diversity-Filtered Warm-up).** `run_dfw.sh` first retains only queries whose K=16 rollouts contain *both* `SELF_SOLVE` and `DELEGATE` to construct a diversified subset *D*<sub>div</sub>. `MODEL_NAME` (the initial policy to roll out from) is required.
 
-```bash
-DOMAIN=math|science MODEL_NAME=path/to/initial-policy \
+`````bash
+DOMAIN=[math/science] MODEL_NAME=path/to/initial-policy \
     bash scripts/training/run_dfw.sh
-```
+`````
 
 Then run a round of GRPO on this diversified subset to produce the warm-up checkpoint. Point `grpo.yaml` at *D*<sub>div</sub> as the training data, then:
 
-```bash
+`````bash
 bash scripts/training/run_grpo.sh scripts/training/grpo.yaml
-```
+`````
 
 **Phase 2: Full GRPO.** Continue GRPO training on the full dataset, starting from the warm-up checkpoint. Update model / dataset paths in `grpo.yaml` to point at the Phase 1 checkpoint and the full dataset, then:
 
-```bash
+`````bash
 bash scripts/training/run_grpo.sh scripts/training/grpo.yaml
-```
+`````
 
 Note: For OLMo-2 models, skip Phase 1. Their rollouts are already diverse enough that DFW is unnecessary, so run only Phase 2 on the full dataset.
 
@@ -216,19 +216,19 @@ Note: For OLMo-2 models, skip Phase 1. Their rollouts are already diverse enough
 
 **Inference.** Run the trained model on the held-out test split. `MODEL_NAME` points at the trained CSA checkpoint.
 
-```bash
-DOMAIN=math|science SPLIT=test MODEL_NAME=path/to/csa-checkpoint \
+`````bash
+DOMAIN=[math/science] SPLIT=test MODEL_NAME=path/to/csa-checkpoint \
     bash scripts/inference/inference_local.sh
-```
+`````
 
 The model emits an `<analysis>` block followed by a `<decision>` (`SELF_SOLVE` or `DELEGATE`). Parsing is in `src/utils/parsing.py:parse_decision`.
 
 **Evaluation.** After training, the model's underlying problem-solving ability may have shifted, so the original `is_correct` labels (probed from the model *before* training) no longer reflect what the model can actually solve *after* training. Both evaluations below therefore start from the same prerequisite: re-generating answers with the trained model on the test split.
 
-```bash
+`````bash
 # Re-generate 5 samples per test query using the model after training.
-DOMAIN=math|science SPLIT=test bash scripts/data/generate_answers.sh
-```
+DOMAIN=[math/science] SPLIT=test bash scripts/data/generate_answers.sh
+`````
 
 **(a) CSA quality.** Does the model make the right `SELF_SOLVE` / `DELEGATE` decisions? `src/csa/evaluate.py` reports **CDS** (Capability Discrimination Score) and **M-F1** as the main metrics, with Accuracy and SSR also reported as references.
 
@@ -237,9 +237,9 @@ The script supports two grading modes via `GRADE_MODE`. The two modes differ onl
 * **`generations` (default, recommended).** Grades against the answers freshly re-generated above (`GT_CSV_PATH`), so `is_correct` reflects the model's ability *after* training. This is what you want for honest evaluation, because CSA training may have shifted that ability.
 * **`column`.** Uses the `is_correct` column already in `CSV_PATH`, which reflects the model's ability *before* training. Provided as an option if you specifically want to compare against the original snapshot.
 
-```bash
+`````bash
 # Recommended: grade against the model's ability after training
-GRADE_MODE=generations DOMAIN=math|science \
+GRADE_MODE=generations DOMAIN=[math/science] \
     CSV_PATH=path/to/csa-predictions.csv \
     GT_CSV_PATH=path/to/regenerated-answers.csv \
     bash scripts/evaluation/evaluate_csa.sh
@@ -248,16 +248,16 @@ GRADE_MODE=generations DOMAIN=math|science \
 GRADE_MODE=column \
     CSV_PATH=path/to/csa-predictions.csv \
     bash scripts/evaluation/evaluate_csa.sh
-```
+`````
 
 **(b) Capability Ratio (CR).** Does CSA training preserve the model's underlying problem-solving ability? CR is the ratio of solve accuracy *after* training to solve accuracy *before* training on the same evaluation set. Pass the two generation CSVs (`PRE_CSV` and `POST_CSV`), produced by Step 2 of label construction and by the re-generation step above:
 
-```bash
-DOMAIN=math|science \
+`````bash
+DOMAIN=[math/science] \
     PRE_CSV=path/to/before-training/test.csv \
     POST_CSV=path/to/after-training/test.csv \
     bash scripts/evaluation/capability_ratio.sh
-```
+`````
 
 <!-- ---
 
@@ -265,10 +265,10 @@ DOMAIN=math|science \
 
 To be added on de-anonymisation.
 
-```bibtex
+`````bibtex
 @article{csa2026,
   title   = {Capability Self-Assessment: Teaching LLMs to Know Their Limits},
   author  = {Anonymous},
   year    = {2026}
 }
-``` -->
+````-->
