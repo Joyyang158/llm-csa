@@ -102,7 +102,7 @@ The four training strategies in Stage ②. The table below shows the **output fo
 ## 🚀 Quick Start
 
 
-All local inference paths go through `vllm.LLM` (the HuggingFace `AutoModelForCausalLM` backend appears only inside `src/training/`, where the trainer needs the model directly). Both SFT and GRPO use full-parameter fine-tuning with DeepSpeed ZeRO-3 (no LoRA), and the accelerate configs live in `scripts/training/`. The sections below follow the three stages above. Every Python entry point is invoked as a module (`python -m src.<package>.<module>`); the shell scripts under `scripts/` are thin launchers around them.
+All local inference paths go through `vllm.LLM`. Both SFT and GRPO use full-parameter fine-tuning with DeepSpeed ZeRO-3, and the accelerate configs live in `scripts/training/`. The sections below follow the three stages above.
 
 ### ① CSA Label Construction
 
@@ -136,8 +136,6 @@ bash scripts/evaluation/grade_science.sh
 ```
 
 ### ② CSA Training Strategies
-
-Pick one of the four strategies below.
 
 #### (a) SFT_label: bare label, no rationale
 
@@ -179,10 +177,11 @@ bash scripts/training/run_sft.sh
 
 #### (d) RLVR: two-stage GRPO with Diversity-Filtered Warm-up
 
-**Phase 1: DFW (Diversity-Filtered Warm-up).** `run_dfw.sh` first retains only queries whose K=16 rollouts contain *both* `SELF_SOLVE` and `DELEGATE` to construct a diversified subset *D*<sub>div</sub>, then runs GRPO on it. This rescues the within-group reward variance that would otherwise vanish, since base models predict `SELF_SOLVE` on nearly every query. DFW is implemented as a self-contained stage so the resulting subset is inspectable and reusable across experiments without re-sampling.
+**Phase 1: DFW (Diversity-Filtered Warm-up).** `run_dfw.sh` first retains only queries whose K=16 rollouts contain *both* `SELF_SOLVE` and `DELEGATE` to construct a diversified subset *D*<sub>div</sub>, then runs GRPO on it.
 
 ```bash
 bash scripts/training/run_dfw.sh
+bash scripts/training/run_grpo.sh
 ```
 
 **Phase 2: Full GRPO.** Continue GRPO training on the full dataset, starting from the warm-up checkpoint:
@@ -191,7 +190,7 @@ bash scripts/training/run_dfw.sh
 bash scripts/training/run_grpo.sh
 ```
 
-For OLMo-2 models, skip Phase 1. Their rollouts are already diverse enough that DFW is unnecessary, so run only Phase 2 on the full dataset.
+Note: For OLMo-2 models, skip Phase 1. Their rollouts are already diverse enough that DFW is unnecessary, so run only Phase 2 on the full dataset.
 
 ### ③ CSA Inference & Evaluation
 
