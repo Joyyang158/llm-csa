@@ -259,16 +259,19 @@ DOMAIN=[math/science] \
     bash scripts/evaluation/capability_ratio.sh
 `````
 
-<!-- ---
+---
 
 ## 📚 Citation
 
-To be added on de-anonymisation.
+If you find our paper or this repository useful, please cite:
 
 `````bibtex
-@article{csa2026,
-  title   = {Capability Self-Assessment: Teaching LLMs to Know Their Limits},
-  author  = {Anonymous},
-  year    = {2026}
+@misc{yang2026capabilityselfassessmentteachingllms,
+      title={Capability Self-Assessment: Teaching LLMs to Know Their Limits}, 
+      author={Haoyan Yang and Reza Shirkavand and Yukai Jin and Jiawei Zhou and Shangqian Gao and Heng Huang},
+      year={2026},
+      eprint={2606.00251},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2606.00251}, 
 }
-````-->
