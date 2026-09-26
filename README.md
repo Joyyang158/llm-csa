@@ -1,23 +1,25 @@
 <h1 align="center">Capability Self-Assessment in Large Language Models</h1>
 
 <p align="center">
-  <a href="https://arxiv.org/abs/2606.00251"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-  <a href="#setup"><img alt="Python" src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white"></a>
+  Haoyan Yang<sup>1,*</sup>, Reza Shirkavand<sup>2,*</sup>, Yukai Jin<sup>3</sup>,
+  Jiawei Zhou<sup>1</sup>, Shangqian Gao<sup>3</sup>, Heng Huang<sup>2</sup>
+</p>
+
+<p align="center">
+  <sup>1</sup> Stony Brook University &nbsp;&nbsp;
+  <sup>2</sup> University of Maryland &nbsp;&nbsp;
+  <sup>3</sup> Florida State University<br>
+  <sup>*</sup> Equal contributions
+</p>
+
+<p align="center">
+  <a href="https://arxiv.org/abs/2606.00251">Paper</a> &nbsp;&middot;&nbsp;
+  <a href="https://github.com/Joyyang158/llm-csa">GitHub</a>
 </p>
 
 <p align="center">
   <img src="figures/teaser_figure.png" alt="CSA teaser figure" width="100%">
 </p>
-
-Code for learning whether a language model should `SELF_SOLVE` a query or
-`DELEGATE` it, while measuring how training changes its underlying solving
-ability. We compare label-only SFT, self-analysis SFT, teacher-analysis SFT,
-and RLVR using GRPO with an optional diversity-filtered warm-up (DFW).
-
-The current manuscript uses the title above. The linked arXiv record was
-posted as **Capability Self-Assessment: Teaching LLMs to Know Their Limits**;
-the citation below retains that record's title.
 
 ## Setup
 
