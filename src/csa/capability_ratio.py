@@ -1,26 +1,9 @@
-"""Capability Ratio (CR) — paper Eq. 8.
+"""Capability Ratio: post/pre mean per-attempt solve accuracy, times 100.
 
-CR measures whether CSA training preserves the model's underlying problem-
-solving ability. It is the percentage of the base model's solve accuracy
-retained after CSA training:
-
-                Acc(post-training)
-        CR = -------------------- × 100%
-                Acc(pre-training)
-
-Both accuracies are measured on the same evaluation set, and (per Appendix
-D.5) each is averaged over multiple independent decoding runs to reduce
-variance from stochastic sampling.
-
-Inputs to this script are two CSVs of *raw* generations from the same set of
-queries — one from the base model, one from the post-training model. Each
-CSV's generations column should be a list of N independent samples per row
-(produced by ``src/data/generate_answers.py`` with ``num_generations=5`` for
-math or ``num_shuffles=5`` for science).
-
-The script grades both CSVs with the same domain-specific aggregation rule
-(any-correct for math, majority-vote for science — see ``src/utils/grading``),
-prints both accuracies, and reports their ratio.
+Both CSVs must cover the same queries in the same order, with the same
+positive number of independent attempts per query (five in the paper).
+For science, each shuffled attempt is graded against its remapped answer.
+Any-correct / majority-correct aggregation is used for CSA labels only.
 """
 
 import argparse
@@ -28,54 +11,51 @@ import logging
 
 import pandas as pd
 
-from src.utils.grading import compute_is_correct
+from src.utils.data import validate_query_alignment
+from src.utils.grading import compute_attempt_correctness
+
+
+def accuracy_from_frame(df, generations_col, domain):
+    scores = compute_attempt_correctness(df, generations_col, domain)
+    counts = {len(row) for row in scores}
+    if len(counts) != 1 or 0 in counts:
+        raise ValueError("CR requires the same positive number of attempts for every query.")
+    k = counts.pop()
+    n_attempts = len(scores) * k
+    n_correct = sum(map(sum, scores))
+    return n_correct / n_attempts, n_correct, n_attempts, k
 
 
 def solve_accuracy(csv_path: str, generations_col: str, domain: str) -> tuple:
-    df = pd.read_csv(csv_path)
-    is_correct = compute_is_correct(df, generations_col, domain)
-    n = len(is_correct)
-    n_correct = int(is_correct.sum())
-    acc = float(is_correct.mean()) if n > 0 else 0.0
-    return acc, n_correct, n
+    """Return mean accuracy, correct attempts, and total attempts."""
+    return accuracy_from_frame(pd.read_csv(csv_path), generations_col, domain)[:3]
 
 
 def main():
     parser = argparse.ArgumentParser(description="Compute Capability Ratio (CR).")
-    parser.add_argument("--pre_csv", required=True,
-                        help="Generations CSV from the base (pre-training) model.")
-    parser.add_argument("--post_csv", required=True,
-                        help="Generations CSV from the post-training model.")
-    parser.add_argument("--generations_col", default="generation",
-                        help="Column holding the list of generations.")
-    parser.add_argument("--domain", choices=["math", "science"], required=True,
-                        help="Domain — sets the aggregation rule.")
+    parser.add_argument("--pre_csv", required=True)
+    parser.add_argument("--post_csv", required=True)
+    parser.add_argument("--generations_col", default="generation")
+    parser.add_argument("--domain", choices=["math", "science"], required=True)
     args = parser.parse_args()
 
-    pre_acc, pre_correct, pre_n = solve_accuracy(
-        args.pre_csv, args.generations_col, args.domain,
-    )
-    post_acc, post_correct, post_n = solve_accuracy(
-        args.post_csv, args.generations_col, args.domain,
-    )
-
-    if pre_n != post_n:
-        logging.warning(
-            "Row counts differ: pre=%d, post=%d. CR comparisons assume the "
-            "two CSVs cover the same evaluation queries.",
-            pre_n, post_n,
-        )
-
-    cr = (post_acc / pre_acc * 100.0) if pre_acc > 0 else float("nan")
+    pre = pd.read_csv(args.pre_csv)
+    post = pd.read_csv(args.post_csv)
+    validate_query_alignment(pre, post)
+    pre_acc, pre_correct, pre_n, pre_k = accuracy_from_frame(pre, args.generations_col, args.domain)
+    post_acc, post_correct, post_n, post_k = accuracy_from_frame(post, args.generations_col, args.domain)
+    if pre_k != post_k:
+        raise ValueError("Pre/post CSVs must have the same number of attempts per query.")
+    cr = f"{post_acc / pre_acc * 100.0:.1f}%" if pre_acc > 0 else "NA (zero pre-training accuracy)"
 
     print("\n=========== Capability Ratio (CR) Report ===========")
     print(f"Domain                : {args.domain}")
+    print(f"Queries / attempts    : {len(pre)} / {pre_k} per query")
     print(f"Pre-training CSV      : {args.pre_csv}")
-    print(f"  Acc(pre)            : {pre_acc:.4f}  ({pre_correct}/{pre_n})")
+    print(f"  Acc(pre)            : {pre_acc:.4f}  ({pre_correct}/{pre_n} attempts)")
     print(f"Post-training CSV     : {args.post_csv}")
-    print(f"  Acc(post)           : {post_acc:.4f}  ({post_correct}/{post_n})")
-    print("----------------------------------------------------")
-    print(f"CR                    : {cr:.1f}%")
+    print(f"  Acc(post)           : {post_acc:.4f}  ({post_correct}/{post_n} attempts)")
+    print(f"CR                    : {cr}")
     print("====================================================\n")
 
 

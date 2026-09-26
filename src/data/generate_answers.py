@@ -88,6 +88,7 @@ def generate_science_row(row: pd.Series, model, tokenizer, args) -> List[dict]:
 # ---------------------------------------------------------------------------
 
 def run(args):
+    random.seed(args.seed)
     logging.info("Domain        : %s", args.domain)
     logging.info("Model         : %s", args.model_name)
     logging.info("Thinking mode : %s", args.enable_thinking)
@@ -97,7 +98,7 @@ def run(args):
     df = pd.read_csv(args.input_csv)
     ensure_object_column(df, args.output_col)
 
-    tokenizer, model = load_vllm(args.model_name)
+    tokenizer, model = load_vllm(args.model_name, seed=args.seed)
 
     for i in tqdm(range(len(df)), desc="Generating"):
         if pd.notna(df.at[i, args.output_col]):
@@ -144,6 +145,7 @@ def parse_args():
                         help="Shuffled attempts per row (science domain).")
 
     parser.add_argument("--save_every", type=int, default=100)
+    parser.add_argument("--seed", type=int, default=3407)
     return parser.parse_args()
 
 

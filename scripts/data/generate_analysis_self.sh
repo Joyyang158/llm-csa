@@ -1,37 +1,18 @@
-# Generate self-written routing analysis via local vLLM.
-#
-# Override via env vars:
-#   DOMAIN=math|science   SPLIT=train|test
+#!/usr/bin/env bash
+set -euo pipefail
 
-
+# Generate label-conditioned rationales from the target model.
+MODEL_NAME="${MODEL_NAME:?Set MODEL_NAME to the target base model}"
+MODEL_TAG="${MODEL_TAG:-${MODEL_NAME##*/}}"
 DOMAIN="${DOMAIN:-math}"
 SPLIT="${SPLIT:-train}"
-MAX_TOKENS="${MAX_TOKENS:-10000}"
+INPUT_CSV="${INPUT_CSV:-outputs/answers/${DOMAIN}/${MODEL_TAG}/${SPLIT}_graded.csv}"
+OUTPUT_CSV="${OUTPUT_CSV:-outputs/analysis/${DOMAIN}/${MODEL_TAG}/${SPLIT}_self.csv}"
 
-MODELS=(
-    Qwen/Qwen3-0.6B
-    Qwen/Qwen3-1.7B
-    Qwen/Qwen3-4B
-    Qwen/Qwen3-8B
-)
-
-INPUT_TEMPLATE="outputs/answers/${DOMAIN}/{model_short}/${SPLIT}_graded.csv"
-OUTPUT_TEMPLATE="outputs/analysis/${DOMAIN}/{model_short}/${SPLIT}_self.csv"
-
-for model in "${MODELS[@]}"; do
-    model_short="${model##*/}"
-    input_csv="${INPUT_TEMPLATE//\{model_short\}/${model_short}}"
-    output_csv="${OUTPUT_TEMPLATE//\{model_short\}/${model_short}}"
-
-    echo "---------------------------------------------------"
-    echo "Self analysis: model=${model}"
-    echo "  input : ${input_csv}"
-    echo "  output: ${output_csv}"
-
-    python -m src.data.generate_analysis_self \
-        --input_csv "${input_csv}" \
-        --output_csv "${output_csv}" \
-        --model_name "${model}" \
-        --output_col routing_analysis \
-        --max_tokens "${MAX_TOKENS}"
-done
+python -m src.data.generate_analysis_self \
+    --input_csv "${INPUT_CSV}" \
+    --output_csv "${OUTPUT_CSV}" \
+    --model_name "${MODEL_NAME}" \
+    --model_type "${MODEL_TYPE:-qwen}" \
+    --output_col "${OUTPUT_COL:-routing_analysis}" \
+    --max_tokens "${MAX_TOKENS:-10000}"

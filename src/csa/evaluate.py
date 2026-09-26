@@ -34,6 +34,7 @@ import math
 import pandas as pd
 
 from src.utils.grading import compute_is_correct
+from src.utils.data import validate_binary_labels, validate_query_alignment
 
 
 # ---------------------------------------------------------------------------
@@ -63,9 +64,9 @@ def cds(p_s: float, n_s: int, p_d: float, n_d: int) -> float:
     DELEGATE (``p_d``, ``n_d``).
     """
     if n_s <= 0 or n_d <= 0:
-        return 0.0
+        return float("nan")
     se = math.sqrt(p_s * (1 - p_s) / n_s + p_d * (1 - p_d) / n_d)
-    return (p_s - p_d) / se if se > 0 else 0.0
+    return (p_s - p_d) / se if se > 0 else float("nan")
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +101,8 @@ def report_metrics(
     accuracy = float((y_pred == y_true).mean())
     ssr_pred = float((y_pred == 1).mean())
     ssr_true = float((y_true == 1).mean())
-    m_f1 = macro_f1(y_true, y_pred)
+    m_f1 = macro_f1(y_true, y_pred) if n_valid else float("nan")
+    cds_text = f"{cds_score:.3f}" if math.isfinite(cds_score) else "NA (empty group or zero standard error)"
 
     print("\n============== CSA Evaluation Report ==============")
     for line in extra_lines:
@@ -112,7 +114,7 @@ def report_metrics(
     print(f"  predict=1 count   : {n_pred_self}  (p_S={p_s:.3f})")
     print(f"  predict=0 count   : {n_pred_del}  (p_D={p_d:.3f})")
     print("---------------------------------------------------")
-    print(f"1. CDS              : {cds_score:.3f}")
+    print(f"1. CDS              : {cds_text}")
     print(f"2. Accuracy         : {accuracy:.3f}")
     print(f"3. Self-Solve Rate  : {ssr_pred:.3f}  (ground-truth SSR={ssr_true:.3f})")
     print(f"4. M-F1             : {m_f1:.3f}")
@@ -164,6 +166,7 @@ def main():
                 f"Missing is_correct column: {args.is_correct_col}. "
                 "Switch to --grade_mode generations to grade on the fly."
             )
+        validate_binary_labels(df[args.is_correct_col], args.is_correct_col)
         df["is_correct"] = df[args.is_correct_col].astype(int)
         extra_lines.append(f"is_correct source   : column '{args.is_correct_col}'")
     else:
@@ -173,11 +176,7 @@ def main():
                 "--generations_col, and --domain."
             )
         gt_df = pd.read_csv(args.gt_csv_path)
-        if len(gt_df) != len(df):
-            raise ValueError(
-                f"Row count mismatch: predictions={len(df)}, gt={len(gt_df)}. "
-                "Alignment assumes identical row order."
-            )
+        validate_query_alignment(df, gt_df)
         is_correct = compute_is_correct(gt_df, args.generations_col, args.domain)
         df = df.reset_index(drop=True)
         is_correct = is_correct.reset_index(drop=True)
@@ -187,6 +186,11 @@ def main():
             f"Generations column  : {args.generations_col}",
             f"Domain (agg rule)   : {args.domain}",
         ]
+
+    if df.empty:
+        raise ValueError("Evaluation data must not be empty.")
+    if not df[args.prediction_col].isin([-1, 0, 1]).all():
+        raise ValueError("Predictions must be -1, 0, or 1 without missing values.")
 
     # ---- Filter invalid predictions ----
     total_rows = len(df)

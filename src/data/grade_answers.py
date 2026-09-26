@@ -9,8 +9,8 @@ Two modes:
 
   * ``single`` — each row's eval column holds a single generation.
   * ``multi``  — each row's eval column holds a list of generations.
-                 For ``math``, a row is correct under pass@1 (any attempt
-                 correct). For ``science``, a row is correct under majority
+                 For ``math``, a capability label is positive if any attempt is
+                 correct. For ``science``, a row is correct under majority
                  vote across the shuffled attempts.
 """
 

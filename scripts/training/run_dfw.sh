@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # Diversity-Filtered Warm-up (DFW) subset construction
 #
 # Samples K rollouts per training query from the initial policy, keeps only
@@ -13,7 +16,8 @@ DOMAIN="${DOMAIN:-math}"
 MODEL_NAME="${MODEL_NAME:?Set MODEL_NAME=initial-policy-id-or-path}"
 MODEL_TYPE="${MODEL_TYPE:-qwen}"
 
-INPUT_CSV="${INPUT_CSV:-dataset/${DOMAIN}/train.csv}"
+MODEL_TAG="${MODEL_TAG:-${MODEL_NAME##*/}}"
+INPUT_CSV="${INPUT_CSV:-outputs/answers/${DOMAIN}/${MODEL_TAG}/train_graded.csv}"
 OUTPUT_CSV="${OUTPUT_CSV:-data/${DOMAIN}/dfw_subset_${MODEL_NAME##*/}.csv}"
 
 NUM_ROLLOUTS="${NUM_ROLLOUTS:-16}"
@@ -32,4 +36,5 @@ python -m src.training.dfw \
     --max_new_tokens "${MAX_NEW_TOKENS}" \
     --temperature "${TEMPERATURE}" \
     --top_p "${TOP_P}" \
-    --top_k "${TOP_K}"
+    --top_k "${TOP_K}" \
+    --seed "${SEED:-3407}"

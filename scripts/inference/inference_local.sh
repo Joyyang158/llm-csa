@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # Run a trained local CSA model on a CSV of queries (vLLM).
 #
 # Two modes (selected by NUM_GENERATIONS):
@@ -16,7 +19,7 @@ TEMPERATURE="${TEMPERATURE:-1.0}"
 TOP_P="${TOP_P:-1.0}"
 TOP_K="${TOP_K:--1}"
 
-INPUT_CSV="${INPUT_CSV:-data/${DOMAIN}/${SPLIT}.csv}"
+INPUT_CSV="${INPUT_CSV:-dataset/${DOMAIN}/${SPLIT}.csv}"
 OUTPUT_CSV="${OUTPUT_CSV:-outputs/csa/${DOMAIN}/${MODEL_NAME##*/}_${SPLIT}.csv}"
 
 EXTRA_FLAGS=""
@@ -34,4 +37,5 @@ python -m src.csa.inference_local \
     --temperature "${TEMPERATURE}" \
     --top_p "${TOP_P}" \
     --top_k "${TOP_K}" \
+    --seed "${SEED:-3407}" \
     ${EXTRA_FLAGS}

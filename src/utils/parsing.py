@@ -48,8 +48,25 @@ def extract_boxed_answer(text: Union[str, float, None]) -> Optional[str]:
     if text is None or (isinstance(text, float) and pd.isna(text)):
         return None
     s = str(text).split("</think>")[-1]
-    matches = re.findall(r"\\boxed\{(.*?)}", s)
-    return matches[-1] if matches else None
+    # Match balanced braces, including nested LaTeX commands and escaped braces.
+    matches = list(re.finditer(r"\\boxed\s*\{", s))
+    if not matches:
+        return None
+    start = matches[-1].end()
+    depth = 1
+    i = start
+    while i < len(s):
+        if s[i] == "\\":
+            i += 2  # Escaped braces do not open or close a group.
+            continue
+        if s[i] == "{":
+            depth += 1
+        elif s[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return s[start:i]
+        i += 1
+    return None
 
 
 def extract_letter_answer(text: Union[str, float, None]) -> Optional[str]:
@@ -62,8 +79,8 @@ def extract_letter_answer(text: Union[str, float, None]) -> Optional[str]:
     if text is None or (isinstance(text, float) and pd.isna(text)):
         return None
     s = str(text).split("</think>")[-1]
-    boxed = re.findall(r"\\boxed\{(.*?)}", s)
-    target = boxed[-1] if boxed else s
+    boxed = extract_boxed_answer(s)
+    target = boxed if boxed is not None else s
     match = re.search(r"\b([A-Z])\b", target)
     return match.group(1) if match else None
 

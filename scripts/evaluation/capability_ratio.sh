@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # Capability Ratio (CR) — paper Eq. 8.
 #
 # Compares the post-training model's solve accuracy to the base model's solve

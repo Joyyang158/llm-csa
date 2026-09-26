@@ -15,8 +15,8 @@ Algorithm 1 runs it twice:
             initial SELF_SOLVE prior and yields θ_warm.
   Stage 2 — Full GRPO. Resume from θ_warm and train on the full dataset D.
 
-The two-stage launcher (``scripts/training/run_rlvr.sh``) chains those
-calls. For OLMo-2 models, paper Appendix D.6 notes that DFW is unnecessary
+Run ``scripts/training/run_grpo.sh`` once for each stage with the
+corresponding model and dataset configuration. For OLMo-2 models, DFW is unnecessary
 because rollouts are already diverse — in that case run only Stage 2 with
 ``scripts/training/run_grpo.sh``.
 
@@ -37,6 +37,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
 
 from src.training.chat_template import render_user_prompt
+from src.utils.data import science_choices, validate_binary_labels
 from src.training.prompts import GRPO_PROMPT_TEMPLATE
 from src.utils.parsing import parse_decision
 
@@ -115,7 +116,7 @@ def build_query(example: dict, domain: str) -> str:
     """Format a single dataset row into a query string."""
     question = example["question"]
     if domain == "science":
-        return f"Question: {question}\nChoices:\n{example['choices']}"
+        return f"Question: {question}\nChoices:\n{science_choices(example)}"
     return f"Question: {question}"
 
 
@@ -129,7 +130,13 @@ def prepare_dataset(dataset_name: str, tokenizer, model_type: str, domain: str):
     if dataset_name.endswith(".csv"):
         ds = load_dataset("csv", data_files={"train": dataset_name})
     else:
-        ds = load_dataset(dataset_name, trust_remote_code=False)
+        ds = load_dataset(dataset_name)
+
+    if not {"question", "is_correct"} <= set(ds["train"].column_names):
+        raise ValueError("GRPO training data requires question and is_correct columns.")
+    if not len(ds["train"]):
+        raise ValueError("GRPO training data is empty.")
+    validate_binary_labels(ds["train"]["is_correct"])
 
     def format_row(example):
         query = build_query(example, domain)
@@ -177,6 +184,7 @@ def build_training_args(config: dict) -> GRPOConfig:
         weight_decay=config["weight_decay"],
         lr_scheduler_type=config["lr_scheduler_type"],
         warmup_ratio=config["warmup_ratio"],
+        seed=config.get("seed", 3407),
         vllm_gpu_memory_utilization=config["vllm_gpu_memory_utilization"],
     )
 

@@ -90,6 +90,9 @@ def run_single(df: pd.DataFrame, start_idx: int, model, tokenizer, args):
             enable_thinking=args.enable_thinking,
             num_generations=1,
             return_time=True,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
         )
         text = outputs[0]
         if idx >= args.warmup:
@@ -189,6 +192,7 @@ def parse_args():
 
     parser.add_argument("--save_every", type=int, default=100)
     parser.add_argument("--warmup", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=3407)
     return parser.parse_args()
 
 
@@ -213,7 +217,7 @@ def main():
         return
 
     ensure_parent_dir(args.output_csv)
-    tokenizer, model = load_vllm(args.model_name)
+    tokenizer, model = load_vllm(args.model_name, seed=args.seed)
 
     if is_rollout:
         run_rollout(df, start_idx, model, tokenizer, args)

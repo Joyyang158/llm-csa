@@ -1,277 +1,223 @@
-<h1 align="center">Capability Self-Assessment:<br>Teaching LLMs to Know Their Limits</h1>
+<h1 align="center">Capability Self-Assessment in Large Language Models</h1>
 
 <p align="center">
-  <a href="#"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
-  <a href="#"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
-  <a href="#"><img alt="Python" src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white"></a>
+  <a href="https://arxiv.org/abs/2606.00251"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
 </p>
 
-<!-- =============================================================== -->
-<!-- TEASER / HERO FIGURE                                            -->
-<!-- Replace `assets/teaser.png` with your promotional figure.       -->
-<!-- Suggested: a single eye-catching image that conveys the core    -->
-<!-- idea of CSA at a glance (e.g. the SELF_SOLVE / DELEGATE         -->
-<!-- routing intuition, or headline results).                        -->
-<!-- =============================================================== -->
-<p align="center">
-  <img src="figures/teaser_figure.png" alt="CSA teaser figure" width="100%">
-</p>
+Code for learning whether a language model should `SELF_SOLVE` a query or
+`DELEGATE` it, while measuring how training changes its underlying solving
+ability. We compare label-only SFT, self-analysis SFT, teacher-analysis SFT,
+and RLVR using GRPO with an optional diversity-filtered warm-up (DFW).
 
-> **TL;DR.** We define **Capability Self-Assessment (CSA)** as a model's ability to judge whether a query falls within its own solvable set, formulated as a binary policy choice between **`SELF_SOLVE`** (attempt the query) and **`DELEGATE`** (defer to a stronger system). Across model families and scales, current LLMs systematically overestimate themselves. We show that CSA is *teachable*, that **RLVR** (reinforcement learning with verifiable rewards) injects it more effectively than supervised fine-tuning, and that the learned behavior preserves the model's underlying problem-solving ability and transfers across domains.
+The current manuscript uses the title above. The linked arXiv record was
+posted as **Capability Self-Assessment: Teaching LLMs to Know Their Limits**;
+the citation below retains that record's title.
 
----
+## Setup
 
-## 📁 Repository Structure
+Run commands from the repository root. Local inference and training require a
+Linux environment with CUDA GPUs and a compatible PyTorch/vLLM/TRL/DeepSpeed
+installation. CPU-only grading and regression tests need only pandas and NumPy.
 
-
-`````
-llm-csa/
-├── src/                         # All Python source (invoked as `python -m src.<pkg>.<mod>`)
-│   ├── data/                    # Dataset construction, answer generation, grading,
-│   │                            # analysis generation, SFT data assembly
-│   ├── csa/                     # CSA inference (local vLLM + closed APIs),
-│   │                            # CSA evaluation, Capability Ratio computation
-│   ├── training/                # SFT, GRPO, and DFW
-│   ├── hub/                     # HuggingFace upload helpers
-│   └── utils/                   # Shared: prompts, parsing, vLLM, IO, grading
-│
-├── scripts/                     # Shell launchers + YAML configs
-│   ├── data/                    # build_dataset_* / generate_answers* /
-│   │                            # generate_analysis_{self,teacher} / build_sft_dataset
-│   ├── inference/               # inference_local / inference_api
-│   ├── evaluation/              # grade_math / grade_science /
-│   │                            # evaluate_csa / capability_ratio
-│   ├── training/                # SFT / GRPO YAML configs + run_sft / run_dfw / run_grpo
-│   │                            # + accelerate (DeepSpeed ZeRO-3) configs
-│   └── hub/                     # upload_dataset / upload_model
-│
-├── dataset/                     # Pre-built benchmark datasets, ready to use
-│   ├── math/                    # GSM8K + MATH-500 + AIME
-│   └── science/                 # MMLU-Pro (bio / chem / health / physics)
-│
-├── requirements.txt
-└── README.md
-`````
-
----
-
-## 🛠️ Setup
-
-`````bash
+```bash
 git clone https://github.com/Joyyang158/llm-csa.git
 cd llm-csa
-pip install -r requirements.txt
-`````
+python -m pip install -r requirements.txt
+```
 
-Environment variables (only set the ones you need):
+`requirements.txt` is not a lockfile for the original experiments. Save the
+resolved environment alongside each run (`python -m pip freeze`) and record
+model revisions, configuration files, and seeds. The SFT trainer uses TRL's
+[`max_length` and `completion_only_loss` configuration](https://huggingface.co/docs/trl/sft_trainer).
 
-| Variable | Used by |
-| --- | --- |
-| `HF_TOKEN` | `scripts/hub/upload_*.sh`, gated HF model downloads |
-| `TOGETHER_API_KEY` | `scripts/data/generate_answers_api.sh`, `scripts/data/generate_analysis_teacher.sh` |
-| `OPENAI_API_KEY` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` | `scripts/inference/inference_api.sh` |
-| `WANDB_API_KEY` | training |
+Set `HF_TOKEN` for gated model downloads or optional Hub uploads,
+`TOGETHER_API_KEY` for teacher analysis, and `WANDB_API_KEY` when using W&B.
+API inference uses the selected provider's credential (`OPENAI_API_KEY`,
+`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, or `TOGETHER_API_KEY`).
 
----
+## Data and labels
 
-## 🧠 Method Overview
+The released benchmark splits are under `dataset/`:
 
-Our framework has three stages. **① CSA Label Construction** probes the model to derive per-query `SELF_SOLVE` / `DELEGATE` labels. **② CSA Training Strategies** instills CSA into the model via one of four approaches: three SFT variants and RLVR. **③ CSA Inference & Evaluation** lets the trained model decide on new queries, and verifies both decision quality and that the model's problem-solving ability is preserved.
+| Domain | Sources | Train | Test |
+| --- | --- | ---: | ---: |
+| Math | GSM8K, MATH500, AIME | 2,260 | 490 |
+| Science | MMLU-Pro biology, chemistry, health, physics | 3,266 | 700 |
 
-<!-- =============================================================== -->
-<!-- METHOD FIGURE                                                   -->
-<!-- Replace `assets/method.png` with the method overview figure     -->
-<!-- (the three-stage pipeline: label construction → training        -->
-<!-- strategies → inference & evaluation).                           -->
-<!-- =============================================================== -->
-<p align="center">
-  <img src="figures/method_figure.jpg" alt="CSA method overview" width="100%">
-</p>
+These files contain questions and gold answers, **not model-specific capability
+labels**. Construct labels separately for each initial model. Science uses
+`options` lists; training also accepts an already formatted `choices` column.
 
-The four training strategies in Stage ②. The table below shows the **output format** (what the model emits at inference time) and whether each strategy requires a **supervision rationale generation** pass before training begins.
+For the paper's `K=5` protocol, a Math capability label is positive when **any**
+attempt is correct. A Science label is positive when **at least three** attempts
+are correct, with options independently shuffled and the gold letter remapped
+for each attempt. This is majority-correct grading, not a vote over answer
+strings. Training labels stay fixed; evaluation labels are recomputed for
+each trained checkpoint.
 
-| Strategy | Output format | Needs supervision rationale generation? |
-| --- | --- | --- |
-| **(a) SFT_label** | `<decision>` only | No |
-| **(b) SFT_self** | `<analysis>` + `<decision>` | Yes. Rationales come from the training model itself |
-| **(c) SFT_teacher** | `<analysis>` + `<decision>` | Yes. Rationales come from a stronger teacher model |
-| **(d) RLVR** | `<analysis>` + `<decision>` | No. Rationales emerge during RL rollouts |
+### 1. Generate and grade base-model answers
 
----
+Launchers process one model at a time. `MODEL_NAME` selects the model;
+`MODEL_TAG` selects its output directory. Use different tags for base and
+trained models, especially when local checkpoints share a directory name.
 
-## 🚀 Quick Start
+```bash
+export DOMAIN=math              # or science
+export MODEL_NAME=Qwen/Qwen3-4B
+export MODEL_TYPE=qwen
+export MODEL_TAG=base-qwen3-4b
+export SEED=3407
 
+for split in train test; do
+    SPLIT="$split" bash scripts/data/generate_answers.sh
+    SPLIT="$split" bash "scripts/evaluation/grade_${DOMAIN}.sh"
+done
+```
 
-All local inference paths go through `vllm.LLM`. Both SFT and GRPO use full-parameter fine-tuning with DeepSpeed ZeRO-3, and the accelerate configs live in `scripts/training/`. The sections below follow the three stages above.
+Raw outputs: `outputs/answers/$DOMAIN/$MODEL_TAG/{train,test}.csv`, with a
+`generation` column. Graded files end in `_graded.csv` and add `is_correct`.
+`INPUT_CSV`, `OUTPUT_CSV`, `NUM_GENERATIONS`, and `MAX_TOKENS` can be overridden.
+For older outputs, pass `EVAL_COL=benchmark_prediction_vllm` to the grader or
+`GENERATIONS_COL=benchmark_prediction_vllm` to evaluation/CR.
 
-Most launchers are driven by **environment variables** (override the defaults shown in each script header), and a few take a YAML config as a **positional argument**. Each command below highlights the key knobs; less common settings (sampling temperatures, max-token caps, paths, etc.) are documented at the top of every script.
+### 2. Train CSA
 
-### ① CSA Label Construction
+Both SFT and GRPO accept `dataset_name` as a local CSV path or a HuggingFace
+dataset repository containing a `train` split. Hub upload is optional; use
+`scripts/hub/upload_dataset.sh` if needed. Update model, domain, dataset, and
+output paths in the YAML before launching; supplied YAMLs contain placeholders.
+The launchers use `scripts/training/deepspeed_zero3.yaml` unless `ACCEL_CONFIG`
+is set to another accelerate configuration.
 
-We evaluate on two domains:
+**Label-only SFT:** set `sft_mode: label` and point `dataset_name` at the base
+model's `train_graded.csv` in `scripts/training/sft.yaml`, then run:
 
-* **math**: GSM8K, MATH-500, AIME. Open-ended; final answers in `\boxed{...}`.
-* **science**: MMLU-Pro restricted to biology / chemistry / health / physics. Multiple-choice; each test query is sampled with multiple option-shuffles and aggregated by majority vote.
-
-We provide pre-built benchmarks for both domains under [`dataset/`](dataset/), and we also provide the code to build them under [`scripts/data/`](scripts/data/) and [`src/data/`](src/data/) in case you want to change the dataset composition (for example, adjust the per-source ratio).
-
-
-`````bash
-bash scripts/data/build_dataset_math.sh
-bash scripts/data/build_dataset_science.sh
-`````
-
-**Step 1: Collect 5 samples per query from the target model** (vLLM-backed; use `generate_answers_api.sh` for hosted models).
-
-`````bash
-DOMAIN=[math/science] SPLIT=train bash scripts/data/generate_answers.sh
-DOMAIN=[math/science] SPLIT=test  bash scripts/data/generate_answers.sh
-`````
-
-**Step 2: Grade the samples to derive the per-row `is_correct` label.**
-
-`````bash
-bash scripts/evaluation/grade_math.sh
-bash scripts/evaluation/grade_science.sh
-`````
-
-### ② CSA Training Strategies
-
-All training launchers load their dataset from the HuggingFace Hub via the `dataset_name` field in the YAML config (`sft.yaml` / `grpo.yaml`), so the CSVs you built in Stage ① need to be pushed to the Hub first. We provide [`scripts/hub/upload_dataset.sh`](scripts/hub/upload_dataset.sh) for this; it requires `HF_TOKEN`:
-
-`````bash
-CSV_PATH=path/to/data.csv  REPO_ID=your-username/csa-sft-dataset \
-    bash scripts/hub/upload_dataset.sh
-`````
-
-In addition, you can optionally use [`scripts/hub/upload_model.sh`](scripts/hub/upload_model.sh) to push a trained checkpoint folder to the Hub. This is not required by the training pipeline itself.
-
-`````bash
-LOCAL_DIR=path/to/checkpoint  REPO_ID=your-username/csa-model \
-    bash scripts/hub/upload_model.sh
-`````
-
-#### (a) SFT_label: bare label, no rationale
-
-Set `sft_mode: label` in `scripts/training/sft.yaml`, then pass the YAML config to the launcher:
-
-`````bash
+```bash
 bash scripts/training/run_sft.sh scripts/training/sft.yaml
-`````
+```
 
-#### (b) SFT_self: self-generated rationale + label
+**Self-analysis SFT:** retain the base-model environment variables from step 1:
 
-First have the training model generate rationales for itself (conditioned on the ground-truth label), then assemble the SFT CSV.
+```bash
+bash scripts/data/generate_analysis_self.sh
+SFT_MODE=self bash scripts/data/build_sft_dataset.sh
+```
 
-`````bash
-DOMAIN=[math/science] SPLIT=train bash scripts/data/generate_analysis_self.sh
-DOMAIN=[math/science] bash scripts/data/build_sft_dataset.sh
-`````
+Set `sft_mode: self` and `dataset_name` to
+`outputs/sft/$DOMAIN/$MODEL_TAG/train_self.csv` (expand variables in the YAML),
+then run the SFT launcher. The builder copies the matching `routing_analysis`
+into `SFT_analysis` and checks that its conditioning label matches the model.
 
-Set `sft_mode: self` in `scripts/training/sft.yaml` and run:
+**Teacher-analysis SFT:** with `TOGETHER_API_KEY` set:
 
-`````bash
-bash scripts/training/run_sft.sh scripts/training/sft.yaml
-`````
+```bash
+bash scripts/data/generate_analysis_teacher.sh
+SFT_MODE=teacher bash scripts/data/build_sft_dataset.sh
+```
 
-#### (c) SFT_teacher: teacher-distilled rationale + label
+The teacher generates analyses for both labels. The builder selects the one
+matching the target model's label. Set `sft_mode: teacher` and point the SFT
+YAML at `outputs/sft/$DOMAIN/$MODEL_TAG/train_teacher.csv` before launching.
+`TEACHER_MODEL` can override the default teacher endpoint. Explicit `MODEL_CSV`,
+`ANALYSIS_CSV`, and `OUTPUT_CSV` overrides are supported by the builder.
 
-Same as (b), but rationales come from a stronger teacher model (requires `TOGETHER_API_KEY`; defaults to `Qwen/Qwen3-235B-A22B-Instruct-2507-tput`, override via `TEACHER_MODEL`):
+**RLVR / GRPO:** first construct a DFW subset from the **graded** training data:
 
-`````bash
-DOMAIN=[math/science] SPLIT=train bash scripts/data/generate_analysis_teacher.sh
-DOMAIN=[math/science] bash scripts/data/build_sft_dataset.sh
-`````
-
-Set `sft_mode: teacher` in `scripts/training/sft.yaml` and run:
-
-`````bash
-bash scripts/training/run_sft.sh scripts/training/sft.yaml
-`````
-
-#### (d) RLVR: two-stage GRPO with Diversity-Filtered Warm-up
-
-**Phase 1: DFW (Diversity-Filtered Warm-up).** `run_dfw.sh` first retains only queries whose K=16 rollouts contain *both* `SELF_SOLVE` and `DELEGATE` to construct a diversified subset *D*<sub>div</sub>. `MODEL_NAME` (the initial policy to roll out from) is required.
-
-`````bash
-DOMAIN=[math/science] MODEL_NAME=path/to/initial-policy \
+```bash
+INPUT_CSV="outputs/answers/$DOMAIN/$MODEL_TAG/train_graded.csv" \
+OUTPUT_CSV="data/$DOMAIN/dfw_subset.csv" \
     bash scripts/training/run_dfw.sh
-`````
+```
 
-Then run a round of GRPO on this diversified subset to produce the warm-up checkpoint. Point `grpo.yaml` at *D*<sub>div</sub> as the training data, then:
+For warm-up, set `model_name` to the base model and `dataset_name` to the DFW
+CSV in `scripts/training/grpo.yaml`, then run:
 
-`````bash
+```bash
 bash scripts/training/run_grpo.sh scripts/training/grpo.yaml
-`````
+```
 
-**Phase 2: Full GRPO.** Continue GRPO training on the full dataset, starting from the warm-up checkpoint. Update model / dataset paths in `grpo.yaml` to point at the Phase 1 checkpoint and the full dataset, then:
+For full GRPO, change `model_name` to the warm-up `final_model` directory,
+`dataset_name` to the full `train_graded.csv`, and `base_output_dir` to a new
+directory. Run the launcher again. For OLMo2, omit DFW and train directly on
+the full graded dataset; set `model_type: olmo` in the YAML and
+`MODEL_TYPE=olmo` for inference. Do not reconstruct training labels using
+the warm-up checkpoint.
 
-`````bash
-bash scripts/training/run_grpo.sh scripts/training/grpo.yaml
-`````
+### 3. Evaluate the trained checkpoint
 
-Note: For OLMo-2 models, skip Phase 1. Their rollouts are already diverse enough that DFW is unnecessary, so run only Phase 2 on the full dataset.
+Select the trained model explicitly and give it its own output tag:
 
-### ③ CSA Inference & Evaluation
+```bash
+export MODEL_NAME=/path/to/trained/final_model
+export MODEL_TAG=trained-qwen3-4b
 
-**Inference.** Run the trained model on the held-out test split. `MODEL_NAME` points at the trained CSA checkpoint.
-
-`````bash
-DOMAIN=[math/science] SPLIT=test MODEL_NAME=path/to/csa-checkpoint \
+OUTPUT_CSV="outputs/csa/$DOMAIN/${MODEL_TAG}_test.csv" \
     bash scripts/inference/inference_local.sh
-`````
+SPLIT=test bash scripts/data/generate_answers.sh
+```
 
-The model emits an `<analysis>` block followed by a `<decision>` (`SELF_SOLVE` or `DELEGATE`). Parsing is in `src/utils/parsing.py:parse_decision`.
+Use `BINARY_ONLY=1` for label-only SFT inference. Sampling controls
+`TEMPERATURE`, `TOP_P`, and `TOP_K` apply to both single-shot and rollout CSA
+inference. `SEED` controls local benchmark/CSA/DFW sampling and Science
+option permutations; training uses the YAML `seed` independently.
 
-**Evaluation.** After training, the model's underlying problem-solving ability may have shifted, so the original `is_correct` labels (probed from the model *before* training) no longer reflect what the model can actually solve *after* training. Both evaluations below therefore start from the same prerequisite: re-generating answers with the trained model on the test split.
+**CSA quality:** by default evaluate against the checkpoint's freshly generated
+answers, with the same query order as the predictions:
 
-`````bash
-# Re-generate 5 samples per test query using the model after training.
-DOMAIN=[math/science] SPLIT=test bash scripts/data/generate_answers.sh
-`````
-
-**(a) CSA quality.** Does the model make the right `SELF_SOLVE` / `DELEGATE` decisions? `src/csa/evaluate.py` reports **CDS** (Capability Discrimination Score) and **M-F1** as the main metrics, with Accuracy and SSR also reported as references.
-
-The script supports two grading modes via `GRADE_MODE`. The two modes differ only in which `is_correct` labels they grade against:
-
-* **`generations` (default, recommended).** Grades against the answers freshly re-generated above (`GT_CSV_PATH`), so `is_correct` reflects the model's ability *after* training. This is what you want for honest evaluation, because CSA training may have shifted that ability.
-* **`column`.** Uses the `is_correct` column already in `CSV_PATH`, which reflects the model's ability *before* training. Provided as an option if you specifically want to compare against the original snapshot.
-
-`````bash
-# Recommended: grade against the model's ability after training
-GRADE_MODE=generations DOMAIN=[math/science] \
-    CSV_PATH=path/to/csa-predictions.csv \
-    GT_CSV_PATH=path/to/regenerated-answers.csv \
+```bash
+CSV_PATH="outputs/csa/$DOMAIN/${MODEL_TAG}_test.csv" \
+GT_CSV_PATH="outputs/answers/$DOMAIN/$MODEL_TAG/test.csv" \
     bash scripts/evaluation/evaluate_csa.sh
+```
 
-# Optional: grade against the original (before-training) labels
-GRADE_MODE=column \
-    CSV_PATH=path/to/csa-predictions.csv \
-    bash scripts/evaluation/evaluate_csa.sh
-`````
+The report includes M-F1, CDS, decision accuracy, self-solve rate, and invalid
+prediction counts. M-F1/accuracy use valid decisions; invalid decisions are
+reported separately. CDS is `NA` when a group is empty or its estimated
+standard error is zero. `GRADE_MODE=column` is available for explicitly
+provided `is_correct` labels, which must belong to the intended checkpoint.
 
-**(b) Capability Ratio (CR).** Does CSA training preserve the model's underlying problem-solving ability? CR is the ratio of solve accuracy *after* training to solve accuracy *before* training on the same evaluation set. Pass the two generation CSVs (`PRE_CSV` and `POST_CSV`), produced by Step 2 of label construction and by the re-generation step above:
+**Capability retention:** CR is the ratio of mean **per-attempt** solving
+accuracies, times 100. It does not aggregate attempts into capability labels.
+For example, degrading from 5/5 to 1/5 correct attempts gives CR = 20%, even
+though both Math any-correct labels remain positive.
 
-`````bash
-DOMAIN=[math/science] \
-    PRE_CSV=path/to/before-training/test.csv \
-    POST_CSV=path/to/after-training/test.csv \
+```bash
+PRE_CSV="outputs/answers/$DOMAIN/base-qwen3-4b/test.csv" \
+POST_CSV="outputs/answers/$DOMAIN/$MODEL_TAG/test.csv" \
     bash scripts/evaluation/capability_ratio.sh
-`````
+```
 
----
+Both CSVs must contain the same queries in the same order and the same
+positive number of attempts per query. A zero base accuracy makes CR undefined
+and is reported as `NA`. Re-grade saved generations after parser or metric
+changes before comparing outputs from different code revisions. Math grading
+extracts balanced `\boxed{...}` answers and compares normalized strings; it
+does not perform general symbolic equivalence checking.
 
-## 📚 Citation
+## Regression tests
 
-If you find our paper or this repository useful, please cite:
+```bash
+python -m pip install pandas numpy
+python -m unittest discover -s tests -v
+```
 
-`````bibtex
+Tests cover grading, metrics, data assembly, and launcher arguments without
+model downloads or API calls. Training configuration tests use stubs and do
+not replace a CUDA training smoke test.
+
+## Citation
+
+The citation for the existing arXiv record is:
+
+```bibtex
 @misc{yang2026capabilityselfassessmentteachingllms,
-      title={Capability Self-Assessment: Teaching LLMs to Know Their Limits}, 
-      author={Haoyan Yang and Reza Shirkavand and Yukai Jin and Jiawei Zhou and Shangqian Gao and Heng Huang},
-      year={2026},
-      eprint={2606.00251},
-      archivePrefix={arXiv},
-      primaryClass={cs.AI},
-      url={https://arxiv.org/abs/2606.00251}, 
+  title={Capability Self-Assessment: Teaching LLMs to Know Their Limits},
+  author={Haoyan Yang and Reza Shirkavand and Yukai Jin and Jiawei Zhou and Shangqian Gao and Heng Huang},
+  year={2026},
+  eprint={2606.00251},
+  archivePrefix={arXiv},
+  primaryClass={cs.AI},
+  url={https://arxiv.org/abs/2606.00251}
 }
+```

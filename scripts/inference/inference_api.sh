@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # Run a closed-source API model as a CSA model.
 #
 # Required env var (depending on MODEL_FAMILY):
@@ -25,7 +28,7 @@ case "${MODEL_FAMILY,,}" in
 esac
 
 MODEL_NAME="${MODEL_NAME:-${DEFAULT_MODEL}}"
-INPUT_CSV="${INPUT_CSV:-data/${DOMAIN}/${SPLIT}.csv}"
+INPUT_CSV="${INPUT_CSV:-dataset/${DOMAIN}/${SPLIT}.csv}"
 # Strip provider prefix from model name (e.g. meta-llama/Llama-3.3-70B → Llama-3.3-70B)
 OUTPUT_CSV="${OUTPUT_CSV:-outputs/csa_api/${DOMAIN}/${MODEL_NAME##*/}_${SPLIT}.csv}"
 

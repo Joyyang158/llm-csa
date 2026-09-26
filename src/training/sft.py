@@ -29,6 +29,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import SFTConfig, SFTTrainer
 
 from src.training.chat_template import render_user_prompt
+from src.utils.data import science_choices, validate_binary_labels
 from src.training.prompts import get_prompt_template, get_response_template
 
 
@@ -54,6 +55,8 @@ def load_model_and_tokenizer(model_name: str):
     model = AutoModelForCausalLM.from_pretrained(
         model_name, torch_dtype=torch.bfloat16,
     )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     return model, tokenizer
 
 
@@ -65,7 +68,7 @@ def _user_content(prompt_template: str, example: dict, domain: str) -> str:
     if domain == "math":
         return prompt_template.format(query=example["question"])
     return prompt_template.format(
-        question=example["question"], choices=example["choices"],
+        question=example["question"], choices=science_choices(example),
     )
 
 
@@ -114,10 +117,25 @@ def prepare_dataset(
     model_type: str,
 ):
     """Load the dataset, render prompts/completions, and filter overlong rows."""
-    ds = load_dataset(dataset_name, trust_remote_code=False)
+    if dataset_name.endswith(".csv"):
+        ds = load_dataset("csv", data_files={"train": dataset_name})
+    else:
+        ds = load_dataset(dataset_name)
+
     prompt_template = get_prompt_template(domain, sft_mode)
     response_template = get_response_template(sft_mode)
     cols = required_columns(domain, sft_mode)
+    if domain == "science" and "options" in ds["train"].column_names:
+        cols.discard("choices")
+        cols.add("options")
+    missing = cols - set(ds["train"].column_names)
+    if missing:
+        raise ValueError(f"Training data missing columns: {sorted(missing)}")
+    validate_binary_labels(ds["train"]["is_correct"])
+    if sft_mode != "label" and any(
+        not isinstance(a, str) or not a.strip() for a in ds["train"]["SFT_analysis"]
+    ):
+        raise ValueError("SFT_analysis must contain nonempty strings.")
 
     def render_batch(batch):
         prompts, completions = [], []
@@ -144,6 +162,9 @@ def prepare_dataset(
         f"Filtered {before - len(split)} over-length samples "
         f"(>{max_length} tokens). Kept {len(split)}."
     )
+
+    if not len(split):
+        raise ValueError("No training examples remain after length filtering.")
 
     print("=== Sample rendered example ===")
     print("--- prompt ---")
@@ -189,11 +210,12 @@ def build_training_args(config: dict) -> SFTConfig:
         report_to=config["report_to"],
         dataset_text_field=config["dataset_text_field"],
         dataset_num_proc=config["dataset_num_proc"],
+        max_length=config["max_seq_length"],
         completion_only_loss=config["completion_only_loss"],
     )
 
 
-def train(model, train_dataset, config: dict):
+def train(model, tokenizer, train_dataset, config: dict):
     accelerator = Accelerator()
 
     if accelerator.is_main_process:
@@ -207,6 +229,7 @@ def train(model, train_dataset, config: dict):
     trainer = SFTTrainer(
         model=model,
         train_dataset=train_dataset,
+        processing_class=tokenizer,
         args=build_training_args(config),
     )
     stats = trainer.train()
@@ -257,7 +280,7 @@ def main():
         sft_mode=config["sft_mode"],
         model_type=config["model_type"],
     )
-    train(model, train_dataset, config)
+    train(model, tokenizer, train_dataset, config)
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ from tqdm import tqdm
 
 from src.utils.inference import generate_vllm, load_vllm
 from src.utils.io import ensure_parent_dir
+from src.utils.data import validate_binary_labels
 from src.utils.parsing import format_options, parse_decision
 from src.utils.prompts import CSA_DECISION_WITH_ANALYSIS
 
@@ -59,11 +60,14 @@ def build_query(row: pd.Series, domain: str) -> str:
 def run(args):
     ensure_parent_dir(args.output_csv)
     df = pd.read_csv(args.input_csv)
+    if df.empty or "is_correct" not in df:
+        raise ValueError("DFW input must be a nonempty graded training CSV with is_correct labels.")
+    validate_binary_labels(df["is_correct"])
     logging.info("Loaded %d training rows from %s", len(df), args.input_csv)
     logging.info("Sampling K=%d rollouts per query from %s",
                  args.num_rollouts, args.model_name)
 
-    tokenizer, model = load_vllm(args.model_name)
+    tokenizer, model = load_vllm(args.model_name, seed=args.seed)
 
     n_self_list = []
     n_del_list = []
@@ -156,6 +160,7 @@ def parse_args():
     parser.add_argument("--top_p", type=float, default=1.0)
     parser.add_argument("--top_k", type=int, default=-1)
 
+    parser.add_argument("--seed", type=int, default=3407)
     return parser.parse_args()
 
 

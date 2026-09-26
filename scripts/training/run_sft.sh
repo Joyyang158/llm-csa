@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # SFT training launcher (full-parameter, no LoRA).
 #
 # Usage:

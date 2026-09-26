@@ -1,65 +1,67 @@
-"""Build the SFT training CSV by selecting the correct analysis per row.
-
-The teacher-binary analysis stage (see :mod:`src.data.generate_analysis` with
-``--mode teacher_binary``) produces, for every question, two analyses — one
-written as if the target model is correct (label=1) and one as if it is not
-(label=0).
-
-This script joins those two analyses against a per-row ``is_correct`` label
-and emits a single ``analysis`` column matching the row's actual label. The
-resulting CSV is the SFT training data for the CSA model.
-"""
+"""Assemble label-conditioned self or teacher analyses for SFT."""
 
 import argparse
-import os
+from pathlib import Path
 
 import pandas as pd
 
+from src.utils.data import validate_binary_labels
 
-def main():
-    parser = argparse.ArgumentParser(description="Build SFT training data from binary analyses.")
-    parser.add_argument("--model_csv", required=True,
-                        help="CSV with per-row ``is_correct`` labels.")
-    parser.add_argument("--analysis_csv", required=True,
-                        help="CSV with per-question ``label_0_analysis`` and "
-                             "``label_1_analysis`` columns.")
-    parser.add_argument("--output_csv", required=True)
-    parser.add_argument("--analysis_col", default="analysis",
-                        help="Column name for the selected analysis.")
-    args = parser.parse_args()
 
-    df_model = pd.read_csv(args.model_csv)
-    df_analysis = pd.read_csv(args.analysis_csv)
-
-    required = {"label_0_analysis", "label_1_analysis", "question"}
-    missing = required - set(df_analysis.columns)
+def build_sft_frame(model, analyses, mode="teacher", source_col="routing_analysis",
+                    output_col="SFT_analysis"):
+    if mode not in {"self", "teacher"}:
+        raise ValueError("mode must be self or teacher")
+    for frame in (model, analyses):
+        if "question" not in frame or frame["question"].isna().any():
+            raise ValueError("Both inputs need nonempty question values.")
+    if "is_correct" not in model:
+        raise ValueError("model_csv must contain is_correct labels.")
+    validate_binary_labels(model["is_correct"])
+    needed = [source_col, "is_correct"] if mode == "self" else ["label_0_analysis", "label_1_analysis"]
+    missing = set(needed) - set(analyses.columns)
     if missing:
         raise ValueError(f"analysis_csv missing columns: {sorted(missing)}")
+    # Include shared query identifiers/options to avoid joining distinct MCQs.
+    keys = [c for c in ("question", "question_id", "source", "category", "options", "choices")
+            if c in model and c in analyses]
+    if analyses.duplicated(keys).any():
+        raise ValueError("Analysis queries are not unique; cannot select an unambiguous match.")
+    lookup = analyses.set_index(keys)
+    query_index = pd.MultiIndex.from_frame(model[keys]) if len(keys) > 1 else pd.Index(model[keys[0]])
+    if not query_index.isin(lookup.index).all():
+        raise ValueError("Some model queries have no matching analysis.")
+    matched = lookup.reindex(query_index).reset_index(drop=True)
+    labels = model["is_correct"].reset_index(drop=True)
+    if mode == "self":
+        validate_binary_labels(matched["is_correct"])
+        if not matched["is_correct"].eq(labels).all():
+            raise ValueError("Self-analysis labels differ from the target model labels.")
+        selected = matched[source_col]
+    else:
+        selected = matched["label_1_analysis"].where(labels.eq(1), matched["label_0_analysis"])
+    if not selected.map(lambda x: isinstance(x, str) and bool(x.strip())
+                        and not x.lstrip().startswith("Error")).all():
+        raise ValueError("Selected analyses contain missing, empty, or failed generations.")
+    result = model.copy()
+    result[output_col] = selected.to_numpy()
+    return result
 
-    lookup = {}
-    for _, row in df_analysis.iterrows():
-        q = row["question"]
-        if q not in lookup:
-            lookup[q] = (row["label_0_analysis"], row["label_1_analysis"])
 
-    selected = []
-    missing_count = 0
-    for _, row in df_model.iterrows():
-        q = row["question"]
-        if q not in lookup:
-            selected.append(None)
-            missing_count += 1
-            continue
-        label_0, label_1 = lookup[q]
-        selected.append(label_1 if int(row["is_correct"]) == 1 else label_0)
-
-    df_model[args.analysis_col] = selected
-    if missing_count:
-        print(f"[warn] {missing_count} questions had no analysis match.")
-
-    os.makedirs(os.path.dirname(args.output_csv) or ".", exist_ok=True)
-    df_model.to_csv(args.output_csv, index=False)
-    print(f"Saved {len(df_model)} rows to {args.output_csv}")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model_csv", required=True)
+    parser.add_argument("--analysis_csv", required=True)
+    parser.add_argument("--output_csv", required=True)
+    parser.add_argument("--mode", choices=["self", "teacher"], default="teacher")
+    parser.add_argument("--source_analysis_col", default="routing_analysis")
+    parser.add_argument("--analysis_col", default="SFT_analysis")
+    args = parser.parse_args()
+    result = build_sft_frame(pd.read_csv(args.model_csv), pd.read_csv(args.analysis_csv),
+                             args.mode, args.source_analysis_col, args.analysis_col)
+    Path(args.output_csv).parent.mkdir(parents=True, exist_ok=True)
+    result.to_csv(args.output_csv, index=False)
+    print(f"Saved {len(result)} rows to {args.output_csv}")
 
 
 if __name__ == "__main__":

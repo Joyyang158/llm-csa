@@ -1,35 +1,17 @@
-# Grade math benchmark answers across one or more models.
-#
-# Edit the MODELS array and INPUT_TEMPLATE / OUTPUT_TEMPLATE below to match
-# your directory layout. Any "{model}" token in the templates is replaced
-# with each model name.
+#!/usr/bin/env bash
+set -euo pipefail
 
-MODELS=(
-    Qwen3-0.6B
-    Qwen3-1.7B
-    Qwen3-4B
-    Qwen3-8B
-    Qwen3-14B
-)
+# Grade the output of scripts/data/generate_answers.sh.
+MODEL_NAME="${MODEL_NAME:-Qwen/Qwen3-4B}"
+MODEL_TAG="${MODEL_TAG:-${MODEL_NAME##*/}}"
+SPLIT="${SPLIT:-test}"
+DOMAIN=math
+INPUT_CSV="${INPUT_CSV:-outputs/answers/${DOMAIN}/${MODEL_TAG}/${SPLIT}.csv}"
+OUTPUT_CSV="${OUTPUT_CSV:-${INPUT_CSV%.csv}_graded.csv}"
 
-INPUT_TEMPLATE="outputs/answers/math/{model}/test.csv"
-OUTPUT_TEMPLATE="outputs/answers/math/{model}/test_graded.csv"
-EVAL_COL="${EVAL_COL:-generation}"
-MODE="${MODE:-multi}"
-
-for model in "${MODELS[@]}"; do
-    input_csv="${INPUT_TEMPLATE//\{model\}/${model}}"
-    output_csv="${OUTPUT_TEMPLATE//\{model\}/${model}}"
-
-    echo "---------------------------------------------------"
-    echo "Grading: model=${model}"
-    echo "  input : ${input_csv}"
-    echo "  output: ${output_csv}"
-
-    python -m src.data.grade_answers \
-        --csv_path "${input_csv}" \
-        --eval_col "${EVAL_COL}" \
-        --domain math \
-        --mode "${MODE}" \
-        --output_path "${output_csv}"
-done
+python -m src.data.grade_answers \
+    --csv_path "${INPUT_CSV}" \
+    --eval_col "${EVAL_COL:-generation}" \
+    --domain "${DOMAIN}" \
+    --mode "${MODE:-multi}" \
+    --output_path "${OUTPUT_CSV}"

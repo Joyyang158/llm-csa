@@ -20,6 +20,7 @@ def load_vllm(
     model_name: str,
     gpu_memory_utilization: float = 0.95,
     max_model_len: Optional[int] = None,
+    seed: int = 3407,
 ) -> Tuple[AutoTokenizer, LLM]:
     """Load a model and tokenizer for vLLM inference."""
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
@@ -27,6 +28,7 @@ def load_vllm(
         model=model_name,
         gpu_memory_utilization=gpu_memory_utilization,
         trust_remote_code=True,
+        seed=seed,
     )
     if max_model_len is not None:
         kwargs["max_model_len"] = max_model_len

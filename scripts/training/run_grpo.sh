@@ -1,3 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
 # GRPO training launcher (full-parameter, no LoRA).
 #
 # Usage:

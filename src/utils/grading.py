@@ -3,8 +3,8 @@
 Both grading flows take a list of model generations per row and reduce them to
 a single binary ``is_correct`` label. The aggregation rule differs by domain:
 
-  * math    — *any-correct* over N generations (pass@1-style).
-  * science — *majority vote* over N attempts (mirrors the shuffled MCQ flow,
+  * math    — *any-correct* over N generations (a capability label, not pass@1).
+  * science — *majority correct* over N attempts (mirrors the shuffled MCQ flow,
               where each attempt sees a different option ordering).
 """
 
@@ -135,55 +135,50 @@ def _per_source_table(df: pd.DataFrame, value_col: str, label: str) -> None:
 # Top-level entry points
 # ---------------------------------------------------------------------------
 
-def compute_is_correct(
-    df: pd.DataFrame,
-    generations_col: str,
-    domain: str,
-) -> pd.Series:
-    """Compute a binary ``is_correct`` series for a dataframe of generations.
-
-    Used by the CSA evaluation script to grade raw generations on the
-    fly when no precomputed ``is_correct`` column is available.
-    """
+def compute_attempt_correctness(
+    df: pd.DataFrame, generations_col: str, domain: str,
+) -> list[list[int]]:
+    """Grade individual attempts; leave aggregation to the caller."""
     if generations_col not in df.columns:
         raise ValueError(f"Missing column: {generations_col}")
-
     if domain == "math":
         df = normalise_math_gold_answers(df)
         gold = df["answer"].astype(str).str.strip()
-        return pd.Series(
-            [
-                int(any(is_math_correct(str(p), g) for p in parse_list_like(v)))
-                for v, g in zip(df[generations_col], gold)
-            ],
-            index=df.index,
-            name="is_correct",
-        )
-
+        return [
+            [is_math_correct(str(p), g) for p in parse_list_like(v, row_idx=i)]
+            for i, (v, g) in enumerate(zip(df[generations_col], gold))
+        ]
     if domain == "science":
         results = []
         for i, value in enumerate(df[generations_col]):
-            attempts = safe_literal_eval(value, row_idx=i)
-            if attempts is None:
-                results.append(0)
-                continue
-            if not isinstance(attempts, list):
-                attempts = [attempts]
-            row_scores = []
+            attempts = parse_list_like(value, row_idx=i)
+            scores = []
             for att in attempts:
-                if not isinstance(att, dict):
-                    row_scores.append(0)
-                    continue
-                gold_letter = str(att.get("correct_label", "")).strip()
-                gen = att.get("generation", "")
+                if not isinstance(att, dict) or not {"correct_label", "generation"} <= att.keys():
+                    raise ValueError(f"Malformed science attempt at row {i}.")
+                gen = att["generation"]
                 if isinstance(gen, list):
-                    gen = gen[0] if gen else ""
-                row_scores.append(is_science_correct(str(gen), gold_letter))
-            threshold = len(row_scores) // 2 + 1
-            results.append(int(sum(row_scores) >= threshold))
-        return pd.Series(results, index=df.index, name="is_correct")
-
+                    if len(gen) != 1:
+                        raise ValueError(f"Expected one generation per science shuffle at row {i}.")
+                    gen = gen[0]
+                scores.append(is_science_correct(str(gen), str(att["correct_label"])))
+            results.append(scores)
+        return results
     raise ValueError(f"Unknown domain: {domain!r}. Expected 'math' or 'science'.")
+
+
+def compute_is_correct(
+    df: pd.DataFrame, generations_col: str, domain: str,
+) -> pd.Series:
+    """Capability labels: any-correct for math; majority-correct for science."""
+    attempts = compute_attempt_correctness(df, generations_col, domain)
+    if any(not row for row in attempts):
+        raise ValueError("Each query must contain at least one parsed attempt.")
+    labels = [
+        int(any(row)) if domain == "math" else int(sum(row) > len(row) / 2)
+        for row in attempts
+    ]
+    return pd.Series(labels, index=df.index, name="is_correct", dtype=int)
 
 
 def grade_dataframe(
@@ -198,7 +193,7 @@ def grade_dataframe(
       * ``single`` — one generation per row.
       * ``multi``  — a list of generations (math) or a list of dict attempts
                      (science) per row. Reports per-attempt accuracy and an
-                     aggregate row label (any-correct for math, majority-vote
+                     aggregate row label (any-correct for math, majority-correct
                      for science).
 
     Returns the dataframe with an added ``is_correct`` column.
@@ -237,31 +232,9 @@ def grade_dataframe(
     if mode != "multi":
         raise ValueError(f"Unknown mode: {mode!r}. Must be 'single' or 'multi'.")
 
-    if domain == "math":
-        per_attempt = []
-        for preds_value, g in zip(df[generations_col], gold):
-            preds = parse_list_like(preds_value)
-            per_attempt.append([is_math_correct(str(p), g) for p in preds])
-    else:
-        per_attempt = []
-        for i, value in enumerate(df[generations_col]):
-            attempts = safe_literal_eval(value, row_idx=i)
-            if attempts is None:
-                per_attempt.append([])
-                continue
-            if not isinstance(attempts, list):
-                attempts = [attempts]
-            row_scores = []
-            for att in attempts:
-                if not isinstance(att, dict):
-                    row_scores.append(0)
-                    continue
-                gold_letter = str(att.get("correct_label", "")).strip()
-                gen = att.get("generation", "")
-                if isinstance(gen, list):
-                    gen = gen[0] if gen else ""
-                row_scores.append(is_science_correct(str(gen), gold_letter))
-            per_attempt.append(row_scores)
+    per_attempt = compute_attempt_correctness(df, generations_col, domain)
+    if any(not row for row in per_attempt):
+        raise ValueError("Each query must contain at least one parsed attempt.")
 
     # Per-attempt accuracy
     n_attempts = [len(row) for row in per_attempt]
@@ -282,9 +255,9 @@ def grade_dataframe(
     if domain == "math":
         is_correct = [int(any(row)) for row in per_attempt]
         df["is_correct"] = pd.Series(is_correct, index=df.index).astype(int)
-        print(f"\n--- Pass@1 (any correct) ---")
-        print(f"  Pass@1: {df['is_correct'].mean():.3f}")
-        _per_source_table(df, "is_correct", "pass@1")
+        print(f"\n--- Capability label (any correct) ---")
+        print(f"  Any-correct rate: {df['is_correct'].mean():.3f}")
+        _per_source_table(df, "is_correct", "any-correct rate")
     else:
         is_correct = [
             int(sum(row) >= (len(row) // 2 + 1)) for row in per_attempt
@@ -292,6 +265,6 @@ def grade_dataframe(
         df["is_correct"] = pd.Series(is_correct, index=df.index).astype(int)
         print(f"\n--- Majority vote ---")
         print(f"  Accuracy: {df['is_correct'].mean():.3f}")
-        _per_source_table(df, "is_correct", "majority-vote accuracy")
+        _per_source_table(df, "is_correct", "majority-correct accuracy")
 
     return df
