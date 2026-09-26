@@ -48,7 +48,7 @@ model, train its self-assessment policy, and evaluate both its decisions and
 its post-training problem-solving ability.
 
 <p align="center">
-  <img src="figures/method_figure.jpg" alt="CSA method overview" width="100%">
+  <img src="https://raw.githubusercontent.com/Joyyang158/llm-csa/dff952cc7bae604b0c8a8c5aea45b407da7c6d76/figures/method_figure.jpg" alt="CSA method overview" width="100%">
 </p>
 
 ## Data and labels
