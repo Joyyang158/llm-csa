@@ -1,27 +1,14 @@
-<div align="center">
+<h1 align="center">Capability Self-Assessment in Large Language Models</h1>
 
-<h1>Capability Self-Assessment in Large Language Models</h1>
+<p align="center">
+  <a href="https://arxiv.org/abs/2606.00251"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+  <a href="#setup"><img alt="Python" src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white"></a>
+</p>
 
-<h3 style="margin-top: 0.25rem;">
-  Haoyan Yang<sup>1,*</sup> · Reza Shirkavand<sup>2,*</sup> · Yukai Jin<sup>3</sup>
-  <br>
-  Jiawei Zhou<sup>1,†</sup> · Shangqian Gao<sup>3,†</sup> · Heng Huang<sup>2,†</sup>
-  <br><br>
-  <sup>1</sup>Stony Brook University · <sup>2</sup>University of Maryland
-  <br>
-  <sup>3</sup>Florida State University
-</h3>
-
-<p><sup>*</sup> Equal contribution · <sup>†</sup> Corresponding authors</p>
-
-<img src="figures/teaser_figure.png" alt="CSA teaser figure" width="100%">
-
-</div>
-
-<h3 align="center">
-  <a href="https://arxiv.org/abs/2606.00251">Paper</a> ·
-  <a href="https://github.com/Joyyang158/llm-csa">GitHub</a>
-</h3>
+<p align="center">
+  <img src="figures/teaser_figure.png" alt="CSA teaser figure" width="100%">
+</p>
 
 Code for learning whether a language model should `SELF_SOLVE` a query or
 `DELEGATE` it, while measuring how training changes its underlying solving
