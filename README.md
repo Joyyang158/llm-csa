@@ -3,6 +3,11 @@
 <p align="center">
   <a href="https://arxiv.org/abs/2606.00251"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+  <a href="#setup"><img alt="Python" src="https://img.shields.io/badge/Python-3.10+-3776AB.svg?logo=python&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <img src="figures/teaser_figure.png" alt="CSA teaser figure" width="100%">
 </p>
 
 Code for learning whether a language model should `SELF_SOLVE` a query or
@@ -35,6 +40,16 @@ Set `HF_TOKEN` for gated model downloads or optional Hub uploads,
 `TOGETHER_API_KEY` for teacher analysis, and `WANDB_API_KEY` when using W&B.
 API inference uses the selected provider's credential (`OPENAI_API_KEY`,
 `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, or `TOGETHER_API_KEY`).
+
+## Method Overview
+
+Our framework has three stages: construct capability labels for the initial
+model, train its self-assessment policy, and evaluate both its decisions and
+its post-training problem-solving ability.
+
+<p align="center">
+  <img src="figures/method_figure.jpg" alt="CSA method overview" width="100%">
+</p>
 
 ## Data and labels
 
