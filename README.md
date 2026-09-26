@@ -1,4 +1,4 @@
-<p align="center"><strong>Capability Self-Assessment in Large Language Models</strong></p>
+<h1 align="center">Capability Self-Assessment in Large Language Models</h1>
 
 <p align="center">
   Haoyan Yang<sup>1,*</sup>, Reza Shirkavand<sup>2,*</sup>, Yukai Jin<sup>3</sup>,
