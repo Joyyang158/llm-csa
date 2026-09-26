@@ -210,17 +210,6 @@ changes before comparing outputs from different code revisions. Math grading
 extracts balanced `\boxed{...}` answers and compares normalized strings; it
 does not perform general symbolic equivalence checking.
 
-## Regression tests
-
-```bash
-python -m pip install pandas numpy
-python -m unittest discover -s tests -v
-```
-
-Tests cover grading, metrics, data assembly, and launcher arguments without
-model downloads or API calls. Training configuration tests use stubs and do
-not replace a CUDA training smoke test.
-
 ## Citation
 
 The citation for the existing arXiv record is:
